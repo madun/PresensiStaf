@@ -4,8 +4,8 @@ import AsyncStorage from '@react-native-community/async-storage';
 import {showMessage} from 'react-native-flash-message';
 
 // export const API_URL = 'http://whispering-beyond-98519.herokuapp.com';
-export const API_URL = 'http://172.20.10.14:8000/api';
-// export const API_URL = 'http://192.168.0.16:8000/api';
+// export const API_URL = 'http://172.20.10.14:8000/api';
+export const API_URL = 'http://192.168.0.21:8000/api';
 // export const API_URL = 'http://192.168.139.10:8000/api';
 
 export function Message(title = null, msg, type) {
