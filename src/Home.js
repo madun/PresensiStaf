@@ -20,17 +20,18 @@ import {RED, BLUE} from './color';
 import Geolocation from 'react-native-geolocation-service';
 import Icon from 'react-native-vector-icons/Feather';
 import axios from 'axios';
-import {API_URL, getItem, removeItem, Message} from './helper';
+import {API_URL, URL_IMAGE, getItem, removeItem, Message} from './helper';
 import {connect} from 'react-redux';
 import {setIsLoggedIn} from './actions/auth/authActions';
 import LoadingOverlay from './LoadingOverlay';
 import {RNCamera} from 'react-native-camera';
+import Confirm from './Confirm';
 
 const PendingView = () => (
   <View
     style={{
       flex: 1,
-      backgroundColor: 'lightgreen',
+      backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'center',
       alignItems: 'center',
     }}>
@@ -47,6 +48,7 @@ class Home extends Component {
       loading: false,
       loadingOverlay: false,
       loadingVerifikasi: false,
+      confirmClockOut: false,
       statusAttendance: 'masuk',
       token: null,
       checkinAt: '',
@@ -57,6 +59,9 @@ class Home extends Component {
       photoSelfie: '',
       lat: '',
       lng: '',
+      alertFaceNotValid: '',
+      authName: '',
+      authFoto: '',
     };
   }
 
@@ -91,6 +96,13 @@ class Home extends Component {
       messageLoading: 'Memuat data',
     });
     getItem('auth').then((auth) => {
+      this.setState(
+        {
+          authName: auth.user.name,
+          authFoto: `${URL_IMAGE + '/foto/employee/' + auth.user_detail.foto}`,
+        },
+        () => console.warn('foto', this.state.authFoto),
+      );
       axios
         .get(`${API_URL}/getStateForToday`, {
           headers: {
@@ -168,6 +180,10 @@ class Home extends Component {
       return;
     }
 
+    if (this.state.confirmClockOut) {
+      this.setState({confirmClockOut: false});
+    }
+
     this.setState({loading: true}, () => {
       Geolocation.getCurrentPosition(
         (position) => {
@@ -197,52 +213,6 @@ class Home extends Component {
       lat: lat,
       lng: lng,
     };
-    // getItem('auth')
-    //   .then((auth) => {
-    //     axios
-    //       .post(`${API_URL}/attendance`, data, {
-    //         headers: {
-    //           Authorization: 'Bearer ' + auth.token,
-    //         },
-    //       })
-    //       .then((res) => {
-    //         this.setState({statusAttendance: 'masuk'});
-    //         if (res.hasOwnProperty('data')) {
-    //           if (res.data.start != null && res.data.end == null) {
-    //             this.setState({
-    //               statusAttendance: 'pulang',
-    //               checkinAt: res.data.start,
-    //             });
-    //             Message(
-    //               'Yeaahhh! 🥳',
-    //               'Good job! berhasil melakukan Presensi Masuk',
-    //               'success',
-    //             );
-    //           } else if (res.data.start != null && res.data.end != null) {
-    //             Message(
-    //               'Presensi hari ini selesai!',
-    //               'See you tomorrow 🥰',
-    //               'success',
-    //             );
-    //             this.setState({
-    //               statusAttendance: 'beres',
-    //               checkoutAt: res.data.end,
-    //               totalWorkHour: res.data.hours,
-    //             });
-    //           }
-    //           if (res.data.hasOwnProperty('msg')) {
-    //             Message('Oppss!', `${res.data.msg}`, 'danger');
-    //           }
-    //         }
-    //         this.setState({loading: false});
-    //         console.warn('WH', this.state.totalWorkHour);
-    //       })
-    //       .catch((err) => {
-    //         console.warn('err', err);
-    //         this.setState({loading: false});
-    //       });
-    //   })
-    //   .catch((err) => console.warn('err', err));
     getItem('auth')
       .then((auth) => {
         axios
@@ -252,7 +222,6 @@ class Home extends Component {
             },
           })
           .then((res) => {
-            console.warn('cek lokasi', res);
             if (res.data.hasOwnProperty('in_area')) {
               this.setState({
                 modalCamera: true,
@@ -272,21 +241,9 @@ class Home extends Component {
       .catch((err) => console.warn('err', err));
   }
 
-  alertClockOut() {
-    Alert.alert(
-      'Clock Out',
-      'Apakah yakin akan mengakhiri Presensi?',
-      [
-        {
-          text: 'Cancel',
-          onPress: () => console.log('Cancel Pressed'),
-          style: 'cancel',
-        },
-        {text: 'OK', onPress: () => this.getLocation()},
-      ],
-      {cancelable: false},
-    );
-  }
+  confirmClockOut = () => {
+    this.setState({confirmClockOut: true});
+  };
 
   takeSelfie = async () => {
     if (this.camera) {
@@ -297,8 +254,6 @@ class Home extends Component {
         photoSelfie: data.uri,
         loadingVerifikasi: true,
       });
-
-      console.warn({lat: this.state.lat, lng: this.state.lng});
 
       getItem('auth')
         .then((auth) => {
@@ -313,13 +268,7 @@ class Home extends Component {
               },
             )
             .then((res) => {
-              console.warn('respon aplod', res);
-
-              this.setState({
-                photoSelfie: '',
-                modalCamera: false,
-                loadingVerifikasi: false,
-              });
+              this.postToFaceX(res.data);
             })
             .catch((err) => console.warn(err));
         })
@@ -336,6 +285,116 @@ class Home extends Component {
       console.log('selfie');
     }
   };
+
+  postToFaceX(data) {
+    const FILE = {
+      img_1: `${URL_IMAGE}/${data.img_1}`,
+      img_2: `${URL_IMAGE}/${data.img_2}`,
+    };
+
+    axios
+      .post('https://www.facexapi.com/match_faces', FILE, {
+        headers: {
+          user_id: '5f3bc90b5bab1b52bae885e8',
+        },
+      })
+      .then(({data}) => {
+        if (data.success) {
+          // jika wajah terdeteksi
+          console.warn(data);
+          if (data.data.status == 'no match') {
+            // jika wajah tidak dikenal
+            this.setState({
+              photoSelfie: '',
+              alertFaceNotValid: 'Oppss waja tidak dikenal!',
+            });
+
+            setTimeout(() => {
+              this.setState({
+                alertFaceNotValid: '',
+              });
+            }, 4000);
+          } else if (data.data.status == 'match') {
+            // jika wajah valid & lokasi GPS valid
+            this.postPresence();
+          }
+        } else {
+          // jika muka yg di upload tidak terlihat (terpotong, buram, dll)
+          this.setState({
+            photoSelfie: '',
+            alertFaceNotValid: 'Oppss wajah tidak terlihat jelas! Coba ulangi',
+          });
+
+          setTimeout(() => {
+            this.setState({
+              alertFaceNotValid: '',
+            });
+          }, 4000);
+        }
+
+        this.setState({
+          loadingVerifikasi: false,
+        });
+      })
+      .catch((err) => console.warn('error faceX', err));
+  }
+
+  postPresence() {
+    let data = {
+      lat: this.state.lat,
+      lng: this.state.lng,
+    };
+    getItem('auth')
+      .then((auth) => {
+        axios
+          .post(`${API_URL}/attendance`, data, {
+            headers: {
+              Authorization: 'Bearer ' + auth.token,
+            },
+          })
+          .then((res) => {
+            this.setState({statusAttendance: 'masuk'});
+            if (res.hasOwnProperty('data')) {
+              if (res.data.start != null && res.data.end == null) {
+                this.setState({
+                  statusAttendance: 'pulang',
+                  checkinAt: res.data.start,
+                });
+                Message(
+                  'Yeaahhh! 🥳',
+                  'Good job! berhasil melakukan Presensi Masuk',
+                  'success',
+                );
+              } else if (res.data.start != null && res.data.end != null) {
+                Message(
+                  'Presensi hari ini selesai!',
+                  'See you tomorrow 🥰',
+                  'success',
+                );
+                this.setState({
+                  statusAttendance: 'beres',
+                  checkoutAt: res.data.end,
+                  totalWorkHour: res.data.hours,
+                });
+              }
+              if (res.data.hasOwnProperty('msg')) {
+                Message('Oppss!', `${res.data.msg}`, 'danger');
+              }
+            }
+
+            this.setState({
+              photoSelfie: '',
+              modalCamera: false,
+              lat: '',
+              lng: '',
+            });
+          })
+          .catch((err) => {
+            console.warn('err', err);
+          });
+      })
+      .catch((err) => console.warn('err', err));
+  }
 
   render() {
     let modalContent = () => (
@@ -364,33 +423,53 @@ class Home extends Component {
           }
           return (
             <View style={{flex: 1, justifyContent: 'space-between'}}>
-              <View
-                style={{
-                  backgroundColor: 'rgba(0,0,0,0.5)',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingVertical: 8,
-                  paddingHorizontal: 16,
-                }}>
-                <View style={{flex: 1}}>
-                  <Text
-                    style={{
-                      color: 'white',
-                      fontWeight: 'bold',
-                      fontSize: 18,
-                      marginBottom: 6,
-                    }}>
-                    Identifikasi Wajah
-                  </Text>
-                  <Text style={{color: 'white', fontWeight: '400'}}>
-                    Pastikan Wajah berada ditengah
-                  </Text>
+              <View>
+                <View
+                  style={{
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 8,
+                    paddingHorizontal: 16,
+                  }}>
+                  <View style={{flex: 1}}>
+                    <Text
+                      style={{
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: 18,
+                        marginBottom: 6,
+                      }}>
+                      Identifikasi Wajah
+                    </Text>
+                    <Text style={{color: 'white', fontWeight: '400'}}>
+                      Pastikan Wajah berada ditengah
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => this.setState({modalCamera: false})}
+                    style={{padding: 8}}>
+                    <Icon name="x" size={20} color="#fff" />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  onPress={() => this.setState({modalCamera: false})}
-                  style={{padding: 8}}>
-                  <Icon name="x" size={20} color="#fff" />
-                </TouchableOpacity>
+                {this.state.alertFaceNotValid != '' && (
+                  <View
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 6,
+                      backgroundColor: '#d73a49',
+                    }}>
+                    <Text
+                      style={{
+                        fontSize: 16,
+                        color: 'white',
+                        fontWeight: 'bold',
+                        lineHeight: 22,
+                      }}>
+                      {this.state.alertFaceNotValid}
+                    </Text>
+                  </View>
+                )}
               </View>
 
               <View style={{alignItems: 'center', marginBottom: 16}}>
@@ -471,11 +550,11 @@ class Home extends Component {
                 marginRight: 16,
                 resizeMode: 'center',
               }}
-              source={{uri: 'https://i.pravatar.cc/500'}}
+              source={{uri: this.state.authFoto}}
             />
             <View>
               <Text style={{color: 'white', fontSize: 18}}>
-                Ilman Manarul Qori
+                {this.state.authName}
               </Text>
             </View>
           </View>
@@ -524,7 +603,7 @@ class Home extends Component {
             <TouchableOpacity
               onPress={
                 this.state.checkinAt != '' && this.state.checkoutAt == ''
-                  ? this.alertClockOut
+                  ? this.confirmClockOut
                   : this.getLocation
               }
               activeOpacity={0.5}
@@ -571,6 +650,13 @@ class Home extends Component {
         </SafeAreaView>
         {this.state.loadingOverlay && (
           <LoadingOverlay label={this.state.messageLoading} />
+        )}
+        {this.state.confirmClockOut && (
+          <Confirm
+            label="Apakah yakin akan Clock Out?"
+            onYes={this.getLocation}
+            onNo={() => this.setState({confirmClockOut: false})}
+          />
         )}
       </>
     );

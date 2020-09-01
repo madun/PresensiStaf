@@ -61,7 +61,7 @@ class AppRoute extends Component {
           <HomeStackScreen />
         )}
 
-        <FlashMessage position="top" />
+        <FlashMessage position="top" style={{zIndex: 1000}} />
       </NavigationContainer>
     );
   }
